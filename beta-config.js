@@ -1,1 +1,1 @@
-window.BETA_CONFIG={"apiBase": "https://processes-feedback-landscape-earthquake.trycloudflare.com", "app": "sentence"};
+window.BETA_CONFIG={"apiBase": "https://sonic-taste-consultancy-senior.trycloudflare.com", "app": "sentence"};
