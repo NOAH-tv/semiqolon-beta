@@ -1,0 +1,26 @@
+/* Daily activity uses local calendar days; missing measurements are never zero scores. */
+const VoiceHistory=(()=>{
+ let metric='time',offset=0,selected=null;
+ const options={time:{label:'말한 시간',color:'#64dac8'},volume:{label:'볼륨',color:'#efb64e'},agreement:{label:'문장 일치도',color:'#92acff'}};
+ function aggregate(records){const days=new Map();for(const r of records){if(!Number.isFinite(r.ts)||r.unsaved)continue;const k=key(new Date(r.ts));if(!days.has(k))days.set(k,{date:k,count:0,seconds:0,timeCount:0,power:0,weight:0,agreementTotal:0,agreementWeight:0});const d=days.get(k);d.count++;
+   const spoken=r.voicedSeconds??r.metrics?.voicedSeconds;if(Number.isFinite(spoken)&&spoken>=0){d.seconds+=Math.min(spoken,r.duration||spoken);d.timeCount++;}
+   const level=r.metrics?.status==='ready'?r.metrics.level?.levelDbFS:null;
+   if(Number.isFinite(level)&&level<=0&&level>=-120){const weight=Math.max(spoken||r.duration||1,.1);d.power+=10**(level/10)*weight;d.weight+=weight;}
+   const a=ReadingFeedback.assessment(r),weight=ReadingFeedback.letters(r.text).length;
+   if(a?.score!==null&&Number.isFinite(a?.score)&&weight){d.agreementTotal+=a.score*weight;d.agreementWeight+=weight;}
+  }
+  for(const d of days.values()){d.volume=d.weight?10*Math.log10(d.power/d.weight):null;d.agreement=d.agreementWeight?Math.round(d.agreementTotal/d.agreementWeight):null;}return days;
+ }
+ function week(now=new Date()){const monday=new Date(now.getFullYear(),now.getMonth(),now.getDate());monday.setDate(monday.getDate()-(monday.getDay()+6)%7+offset*7);return Array.from({length:7},(_,i)=>{const d=new Date(monday);d.setDate(d.getDate()+i);return d;});}
+ function value(d){return metric==='time'?(d?.timeCount?d.seconds:null):d?.[metric]??null;}
+ const volumeIndex=db=>Math.max(0,Math.min(100,(db+60)/60*100));
+ function format(v){if(v===null)return '—';if(metric==='time')return `${Math.floor(Math.round(v)/60)}분 ${Math.round(v)%60}초`;if(metric==='agreement')return `${Math.round(v)}%`;return `${v.toFixed(1)}<small> dBFS</small>`;}
+ function markup(){const days=aggregate(state.records),dates=week(),today=key(new Date());if(!selected||!dates.some(d=>key(d)===selected))selected=dates.some(d=>key(d)===today)?today:key(dates[6]);
+  const d=days.get(selected),v=value(d),opt=options[metric],total=dates.reduce((n,day)=>n+(days.get(key(day))?.seconds||0),0),maxTime=Math.max(15,...dates.map(d=>days.get(key(d))?.seconds||0));
+  const scaleTime=maxTime<=60?Math.ceil(maxTime/15)*15:Math.ceil(maxTime/60)*60;const axis=metric==='time'?(scaleTime<60?scaleTime+'초':scaleTime/60+'분'):metric==='agreement'?'100%':'0 dBFS';
+  return `<section class="panel activity" id="voice-activity" data-chart-metric="${metric}" style="--chart-color:${opt.color}" aria-label="날짜별 목소리 기록"><div class="activity-top"><span>${offset===0?'이번 주':'주간 합계'} ${Math.floor(Math.round(total)/60)}분 ${Math.round(total)%60}초</span><div><button class="quiet" data-week="-1" aria-label="이전 주">‹</button><span>${dates[0].getMonth()+1}.${dates[0].getDate()} – ${dates[6].getMonth()+1}.${dates[6].getDate()}</span><button class="quiet" data-week="1" aria-label="다음 주" ${offset===0?'disabled':''}>›</button></div></div><div class="chart-tabs" role="group" aria-label="기록 항목">${Object.entries(options).map(([k,o])=>`<button data-history-metric="${k}" aria-pressed="${metric===k}">${o.label}</button>`).join('')}</div><div class="activity-value" aria-live="polite"><span>${selected===today?'오늘':selected.slice(5).replace('-','월 ')+'일'} · ${opt.label}</span><strong>${format(v)}</strong><small>${d?d.count+'개 녹음'+(v===null?' · 분석된 값 없음':''):'기록 없음'}</small></div><div class="chart-area"><span class="chart-max">${axis}</span><div class="daily-bars">${dates.map(date=>{const k=key(date),day=days.get(k),n=value(day),future=k>today,height=n===null?0:metric==='time'?n/scaleTime*100:metric==='volume'?volumeIndex(n):n;const description=n===null?(day?'분석 대기':'기록 없음'):format(n).replace(/<[^>]*>/g,'');return `<button class="day-bar" data-history-day="${k}" aria-pressed="${selected===k}" aria-label="${date.getMonth()+1}월 ${date.getDate()}일 ${opt.label} ${description}" ${future?'disabled':''}><span class="bar-space"><i class="bar${n===null?' missing':''}" style="height:${n===null?2:Math.max(2,height)}%"></i></span><span class="day-number">${date.getDate()}</span><span class="day-name">${['일','월','화','수','목','금','토'][date.getDay()]}</span></button>`;}).join('')}</div>${metric==='volume'?'<span class="chart-floor">−60 dBFS</span>':''}</div><p class="chart-note">${metric==='time'?'목소리가 감지된 시간을 하루마다 더했어요.':metric==='volume'?'녹음 대표 입력값의 하루 평균이에요. 0 dBFS에 가까울수록 커요. 같은 기기·30cm에서 비교해요.':'읽을 글과 인식한 말의 일치도예요. 발음 평가 점수와는 달라요.'}</p></section>`;
+ }
+ function refresh(){const old=document.getElementById('voice-activity');if(!old)return;const t=document.createElement('template');t.innerHTML=markup();old.replaceWith(t.content.firstElementChild);}
+ function actions(b){if(b.dataset.historyMetric&&options[b.dataset.historyMetric]){metric=b.dataset.historyMetric;refresh();return true;}if(b.dataset.historyDay){selected=b.dataset.historyDay;refresh();return true;}if(b.dataset.week){offset=Math.min(0,offset+Number(b.dataset.week));selected=null;refresh();return true;}return false;}
+ return {aggregate,markup,actions,refresh};
+})();
