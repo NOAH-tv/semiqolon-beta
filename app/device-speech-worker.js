@@ -6,17 +6,24 @@ const CACHE='sq-korean-streaming-20240616-v1';
 var Module={noInitialRun:true,locateFile:()=>new URL('assets/sherpa-asr.wasm',location.href).href,print:message=>{errors.push(message);if(errors.length>12)errors.shift();},printErr:message=>{errors.push(message);if(errors.length>12)errors.shift();}};
 async function modelPart(part){
  const url=new URL('assets/'+part.url,location.href).href;
+ // Both editions on the same origin share verified model bytes, not audio.
+ const cacheKey=new URL('/__sq_model__/'+part.sha256,location.origin).href;
  let cache=null,response=null,cached=false;
- try{cache=await caches.open(CACHE);response=await cache.match(url);cached=!!response;}catch{}
+ try{cache=await caches.open(CACHE);response=await cache.match(cacheKey);cached=!!response;}catch{}
  for(let attempt=0;attempt<2;attempt++){
   if(!response){response=await fetch(url);if(!response.ok)throw Error('download');}
-  const bytes=new Uint8Array(await response.arrayBuffer());
+  let bytes;
+  if(response.body?.getReader){
+   bytes=new Uint8Array(part.bytes);const reader=response.body.getReader();let received=0,lastMB=-1;
+   for(;;){const {value,done}=await reader.read();if(done)break;if(received+value.length>bytes.length){await reader.cancel();throw Error('model-size');}bytes.set(value,received);received+=value.length;const mb=Math.floor((loaded+received)/1e6);if(mb-lastMB>=2){lastMB=mb;postMessage({type:'status',status:'loading',loadedMB:mb});}}
+   if(received!==bytes.length)throw Error('download-incomplete');
+  }else bytes=new Uint8Array(await response.arrayBuffer());
   const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),x=>x.toString(16).padStart(2,'0')).join('');
   if(bytes.length===part.bytes&&hash===part.sha256){
-   try{if(!cached)await cache?.put(url,new Response(bytes));}catch{} // Private browsing/storage pressure must not prevent use.
+   try{if(!cached)await cache?.put(cacheKey,new Response(bytes));}catch{} // Private browsing/storage pressure must not prevent use.
    loaded+=bytes.length;postMessage({type:'status',status:'loading',loadedMB:Math.round(loaded/1e6)});return bytes;
   }
-  await cache?.delete(url);response=null;cached=false;
+  await cache?.delete(cacheKey);response=null;cached=false;
  }
  throw Error('model-integrity');
 }

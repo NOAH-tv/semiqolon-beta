@@ -28,7 +28,7 @@ const DeviceSpeech=(()=>{
   status='loading';loadedMB=0;update();
   initializing=(async()=>{
    try{
-    const current=worker=new Worker(new URL('device-speech-worker.js?v=20261002-mobile-stream',document.baseURI));
+    const current=worker=new Worker(new URL('device-speech-worker.js?v=20261002-mobile-stream2',document.baseURI));
     worker.onmessage=({data:m})=>{
      if(worker!==current)return;
      if(m.type==='partial'){listeners.get(m.token)?.(m);return;}

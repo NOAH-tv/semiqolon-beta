@@ -101,7 +101,7 @@ body{--water-ui:0%;--water-logo-opacity:0;--ink:color-mix(in srgb,#303435 var(--
 </style>
 <script src="beta-config.js"></script>
 <script src="beta-access.js"></script>
-<script src="device-voice.js?v=20261002-mobile-stream"></script>
+<script src="device-voice.js?v=20261002-mobile-stream2"></script>
 </head>
 <body>
 <canvas id="water-surface" aria-hidden="true"></canvas>
@@ -238,11 +238,11 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden&&state.cap
 async function init(){state.choice=dailyIndex(state.topic);state.view=profile?.voiceSetup?'home':'welcome';render();try{state.db=await new Promise((resolve,reject)=>{const req=indexedDB.open('semiqolon-first-product-v1',1);req.onupgradeneeded=()=>req.result.createObjectStore('recordings',{keyPath:'id'});req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);req.onblocked=()=>reject(Error('blocked'));});state.records=(await dbOp('readonly',s=>s.getAll())).map(DeviceVoice.unpack).sort((a,b)=>b.ts-a.ts);}catch{toast('브라우저 저장을 사용할 수 없어요. 녹음 후 WAV를 내려받아 주세요.');}state.loaded=true;render();ReadingFeedback.prepare().then(info=>{if(info?.provider!=='sherpa-local'||info.status!=='ready')DeviceSpeech.restore();});VoiceTraining.checkConnection();}
 window.addEventListener('DOMContentLoaded',init);
 </script>
-<script src="device-speech.js?v=20261002-mobile-stream"></script>
-<script src="first-product-reading.js?v=20261002-mobile-stream"></script>
-<script src="first-product-history.js?v=20261002-mobile-stream"></script>
-<script src="first-product-voice.js?v=20261002-mobile-stream"></script>
-<script src="first-product-scripts.js?v=20261002-mobile-stream"></script>
-<script src="first-product-training.js?v=20261002-mobile-stream"></script>
-<script src="first-product-water.js?v=20261002-mobile-stream"></script>
+<script src="device-speech.js?v=20261002-mobile-stream2"></script>
+<script src="first-product-reading.js?v=20261002-mobile-stream2"></script>
+<script src="first-product-history.js?v=20261002-mobile-stream2"></script>
+<script src="first-product-voice.js?v=20261002-mobile-stream2"></script>
+<script src="first-product-scripts.js?v=20261002-mobile-stream2"></script>
+<script src="first-product-training.js?v=20261002-mobile-stream2"></script>
+<script src="first-product-water.js?v=20261002-mobile-stream2"></script>
 </body></html>
