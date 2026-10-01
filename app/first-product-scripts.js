@@ -1,5 +1,5 @@
 'use strict';
-// Photos stay in memory. Only reviewed text is saved; existing audio storage is unchanged.
+// Photos stay in memory. Only text drafts and scripts are saved; existing audio storage is unchanged.
 const ScriptLibrary=(()=>{
  const STORE='sq-scripts-v1',DRAFT='sq-script-draft-v1',MAX=20000;
  let documents=[],draft={title:'',text:''},storageOK=true,photo='',notice='',error='',job=null,loader;
