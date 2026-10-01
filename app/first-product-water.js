@@ -65,8 +65,8 @@ function bandForce(){                                                // 한 걸�
 let GW = 229, GH = 500, CELL = 1.7, SPS = 100, DAMP = 0.99, VISC = 0.02, A, B, D, D2, simCv = null, simCtx = null, img = null;
 function initSim(){
   const oW = GW, oH = GH, oA = A, oB = B, oD = D;
-  GW = Math.round(clamp(innerWidth / 1.7, 200, 640));                // 격자 한 칸 ≈ 화면 1.7px
-  GH = Math.round(clamp(GW * innerHeight / Math.max(1, innerWidth), 150, 900));
+  GW = Math.round(clamp(innerWidth / (gl ? 2 : 3), gl ? 160 : 100, gl ? 480 : 160));                // 대체 렌더러는 더 작은 격자로 모바일 부담을 줄인다
+  GH = Math.round(clamp(GW * innerHeight / Math.max(1, innerWidth), 150, gl ? 720 : 360));
   A = new Float32Array(GW * GH); B = new Float32Array(GW * GH);
   D = new Float32Array(GW * GH).fill(1); D2 = new Float32Array(GW * GH);
   if (oA && oA.length === oW * oH){                                   // 화면 크기가 바뀌어도 물결과 어둠을 그대로 옮겨 담는다
@@ -230,6 +230,8 @@ vec3 water(vec2 p, out float dk){
   d = clamp(d + (nz - 0.5) * 0.7 * e, 0.0, 1.0);
   vec3 ink = mix(vec3(0.014,0.015,0.018),vec3(0.075,0.076,0.078),e*0.5)+(nz-0.5)*0.008;
   col = mix(col, ink, d * 0.97);
+  // Voice/touch highlights remain visible over the dark water without completing the light.
+  col += vec3(sheen * 0.7 + abs(tilt) * 0.09) * d;
   dk = d;
   return col;
 }
@@ -320,17 +322,18 @@ function initGL(){
   g.activeTexture(g.TEXTURE2); g.texImage2D(g.TEXTURE_2D, 0, g.R8, EN, 1, 0, g.RED, g.UNSIGNED_BYTE, null);
   g.uniform1i(u.uH, 0); g.uniform1i(u.uD, 1); g.uniform1i(u.uE, 2);
   gl = g;
-  cv.addEventListener("webglcontextlost", e => { e.preventDefault(); use2D(); resize(); make2DSim(); });
+  cv.addEventListener("webglcontextlost", e => { e.preventDefault(); use2D(); resize(); });
   return true;
 }
 function glSize(){
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, G.tH); gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, GW, GH, 0, gl.RED, gl.FLOAT, null);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, G.tD); gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, GW, GH, 0, gl.RED, gl.FLOAT, null);
+  if(gl.getError()!==gl.NO_ERROR){use2D();initSim();}
 }
 function use2D(){
   if (cv.dataset.gl){ const c2 = document.createElement("canvas"); c2.id = "water-surface"; c2.setAttribute("aria-hidden", "true"); cv.replaceWith(c2); cv = c2; }
   gl = null; G = null;
-  ctx = cv.getContext("2d", { alpha: false });cv.dataset.renderer="canvas2d";
+  cv.width=W;cv.height=H;ctx = cv.getContext("2d", { alpha: false });cv.dataset.renderer="canvas2d";document.body.dataset.waterRenderer="canvas2d";buildEdge();
 }
 function renderGL(){
   const g = gl, u = G.u;
@@ -365,7 +368,7 @@ function shade(light){
       for(let c=0;c<3;c++){
         const deep=lerp(PT[c],PB[c],depth)*(1+tilt*.9);
         const through=lerp(lerp(PW[c],top[c],opening),lerp(PB[c],bottom[c],opening),smooth(-.2,1.3,ty))*daylight;
-        d[i*4+c]=lerp(lerp(deep,through*(1+tilt*.12),.30+light*.70),[3.57,3.83,4.59][c],k);
+        d[i*4+c]=lerp(lerp(deep,through*(1+tilt*.12),.30+light*.70),[3.57,3.83,4.59][c],k)+Math.abs(tilt)*23*D[i];
       }
       d[i*4+3]=255;
     }
@@ -456,7 +459,7 @@ function edgeTick(f){
 }
 
 
- function resize(){S=Math.min(devicePixelRatio||1,2,Math.sqrt(2400000/(innerWidth*innerHeight)));W=Math.round(innerWidth*S);H=Math.round(innerHeight*S);cv.width=W;cv.height=H;initSim();if(ctx)buildEdge();wake();}
+ function resize(){S=Math.min(devicePixelRatio||1,2,Math.sqrt(1200000/(innerWidth*innerHeight)));W=Math.round(innerWidth*S);H=Math.round(innerHeight*S);cv.width=W;cv.height=H;initSim();if(ctx)buildEdge();wake();}
  function setStage(next){stage=next;document.body.dataset.waterStage=stage;cv.dataset.stage=stage;}
  function begin(s){if(s.kind!=='read')return;journeyKey=s.attempt;complete=false;inputAmount=0;volumeEnvelope=0;progressValue=Math.min(.88,VoicePractice.clarity(s.waterSeconds));listenRatio=0;A?.fill(0);B?.fill(0);edgeE.fill(0);edgeB.fill(0);BANDS.forEach(b=>b.e=0);setStage('first');cv.dataset.phase='ink';wake();}
  function sound(s){if(s.kind!=='read'||s.attempt!==journeyKey)return;progressValue=Math.max(progressValue,Math.min(.88,VoicePractice.clarity(((s.waterSeconds||0)+(s.voiceSeconds||0))*1.5)));cv.dataset.phase=complete?'clear':progressValue?'opening':'ink';document.body.dataset.readingPhase=cv.dataset.phase;wake();}
@@ -475,8 +478,8 @@ function edgeTick(f){
   wake();
  }
 
- function voice(r,rms){V.ac=r.ac;V.an=r.an;voiceAt=performance.now();const level=VoicePractice.inputLevel(rms);inputAmount=level.amount;talking=inputAmount>0;cv.dataset.inputDbfs=level.db===null?'silent':level.db.toFixed(1);if(!frequency||frequency.length!==r.an.frequencyBinCount)frequency=new Uint8Array(r.an.frequencyBinCount);r.an.getByteFrequencyData(frequency);const el=document.querySelector('.reading-card')||document.querySelector('.primary');if(el){const box=el.getBoundingClientRect();bandX=clamp((box.left+box.width/2)/innerWidth,.03,.97);bandY=clamp((box.top+box.height/2)/innerHeight,.03,.97);glowX=bandX;glowY=bandY;}wake();}
- function frame(now){raf=0;if(document.hidden)return;const dt=Math.min(.05,last?(now-last)/1000:.016);last=now;T+=dt;
+ function voice(r,rms){V.ac=r.ac;V.an=r.an;voiceAt=performance.now();const level=VoicePractice.inputLevel(rms);inputAmount=level.amount;talking=inputAmount>0;cv.dataset.inputDbfs=level.db===null?'silent':level.db.toFixed(1);if(!frequency||frequency.length!==r.an.frequencyBinCount)frequency=new Uint8Array(r.an.frequencyBinCount);r.an.getByteFrequencyData(frequency);const el=document.querySelector('.capture button')||document.querySelector('.reading-card')||document.querySelector('.primary');if(el){const box=el.getBoundingClientRect();bandX=clamp((box.left+box.width/2)/innerWidth,.15,.85);bandY=clamp((box.top+box.height/2)/innerHeight,.2,.8);glowX=bandX;glowY=bandY;}cv.dataset.waveOrigin=`${bandX.toFixed(2)},${bandY.toFixed(2)}`;wake();}
+ function frame(now){raf=0;if(document.hidden)return;if(motion()&&matchMedia('(pointer: coarse)').matches&&last&&now-last<32){raf=requestAnimationFrame(frame);return;}const dt=Math.min(.05,last?(now-last)/1000:.016);last=now;T+=dt;
  const active=!!(state.capture||glassPlayback||['tuning','mouth'].includes(state.view))&&now-voiceAt<400,f=active?frequency:null,speaking=active&&talking;
  const targetVolume=speaking?inputAmount:0;volumeEnvelope+=(targetVolume-volumeEnvelope)*(1-Math.exp(-dt/(targetVolume>volumeEnvelope?.07:.24)));cv.dataset.waveStrength=volumeEnvelope.toFixed(3);cv.dataset.waveWidth=(.60+volumeEnvelope*1.65).toFixed(3);
  if(complete)completionAge+=dt;completion=complete?completionAge/4.2:-1;

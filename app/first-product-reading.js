@@ -73,7 +73,7 @@ const ReadingFeedback=(()=>{
   if(r.story.id==='sq-vowel-a-v1')return;
   const s=r.reading={cursor:0,seen:new Set(),finals:new Map(),stopped:false,lastSent:0,legacy:!!window.BetaAccess?.remote,started:performance.now()};setStatus('말을 듣고 있어요');
   if(window.DeviceSpeech?.enabled){local(r);return;}
-  if(s.legacy){setStatus('녹음 중 · 설정에서 문장 인식을 준비해 주세요');return;}
+  if(s.legacy){setStatus('녹음 중 · 글자 표시는 인식 준비 후 켜져요');return;}
   const info=connection||await prepare();if(s.stopped||state.capture!==r)return;
   if(!info||!['configured','ready'].includes(info.status)||!Number.isInteger(info.port)||typeof info.ticket!=='string'||!['localhost','127.0.0.1'].includes(location.hostname)){local(r);return;}
   try{
@@ -97,7 +97,7 @@ const ReadingFeedback=(()=>{
   }catch{local(r);}
  }
  async function listen(r){const s=r.reading;if(s.stopped||state.capture!==r)return;
-  if(s.device&&!DeviceSpeech.ready){setStatus('녹음 중 · '+DeviceSpeech.label());s.timer=setTimeout(()=>listen(r),1000);return;}
+  if(s.device&&!DeviceSpeech.ready){if(DeviceSpeech.status==='idle')DeviceSpeech.prepare();setStatus('녹음 중 · '+DeviceSpeech.label());s.timer=setTimeout(()=>listen(r),1000);return;}
   const end=r.chunks.reduce((n,c)=>n+c.length,0),sr=r.ac.sampleRate,start=Math.max(0,end-Math.round(sr*(s.legacy&&!s.device?12:8)));
   if(end-start<sr*(s.device?2.4:s.legacy?3:1.8)||end-s.lastSent<sr*.9||document.hidden){s.timer=setTimeout(()=>listen(r),200);return;}
   const controller=s.controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),s.device?120000:s.legacy?25000:12000),requested=performance.now();s.lastSent=end;
@@ -110,7 +110,7 @@ const ReadingFeedback=(()=>{
    }else setStatus(t.status==='busy'?'인식 대기 · 녹음 중':t.status==='loading'?'인식 준비 중 · 녹음 중':'녹음 중 · 잠시 후 다시 인식해요');
    const status=document.getElementById('reading-status');if(status){status.dataset.recognitionMs=Math.round(performance.now()-requested);status.dataset.recognitionMode=s.device?'whisper-device':'live-local';if(t.status==='ready'&&!status.dataset.firstResultMs)status.dataset.firstResultMs=String(Math.round(performance.now()-s.started));}
   }catch{if(!s.stopped)setStatus('녹음 중 · 글자 인식은 잠시 쉬어요');}
-  finally{clearTimeout(timeout);if(s.device&&performance.now()-requested>4500&&!s.stopped){setStatus('녹음 중 · 문장은 녹음 후 확인해요');return;}if(!s.stopped)s.timer=setTimeout(()=>listen(r),s.device?600:Math.max(180,1200-(performance.now()-requested)));}
+  finally{clearTimeout(timeout);if(s.device&&performance.now()-requested>12000&&!s.stopped){setStatus('녹음 중 · 문장은 녹음 후 확인해요');return;}if(!s.stopped)s.timer=setTimeout(()=>listen(r),s.device?600:Math.max(180,1200-(performance.now()-requested)));}
  }
  function stop(r){if(!r?.reading)return;r.reading.stopped=true;clearTimeout(r.reading.timer);r.reading.controller?.abort();closeStream(r.reading);}
  window.addEventListener('pagehide',()=>stop(state.capture));
