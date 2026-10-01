@@ -1,12 +1,12 @@
 // Existing SEMI transparent water/glass renderer, reused from the Sept 30 beta. MIT notice in licenses/.
-const PALETTES={clear:{top:[74,133,151],bot:[22,58,72],line:[199,232,235],white:[130,189,198],glow:[195,241,233]}};
+const PALETTES={clear:{top:[164,164,161],bot:[87,89,89],line:[238,237,230],white:[220,219,211],glow:[255,252,243]}};
 const Water=(()=>{
  const clamp=(v,a,b)=>Math.min(b,Math.max(a,v)),lerp=(a,b,t)=>a+(b-a)*t;
  const smooth=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
- let cv=$('water-surface'),gl=null,G=null,ctx=null,LENS=[],uiV=1,W=0,H=0,S=1,T=0,light=0;
+ let cv=$('water-surface'),gl=null,G=null,ctx=null,W=0,H=0,S=1,T=0,light=0;
  let V={ac:null,an:null},frequency=null,talking=false,voiceAt=0,inputAmount=0,volumeEnvelope=0,glowX=.5,glowY=.45,glowA=0,glowT=0;
  let flashes=[],edgeV=0,edgeT=0,journeyKey=null,progressValue=0,complete=false,sweep=0,sweepOn=false;
- let raf=0,last=0,acc=0,lastLayout=0,stage='first',guided=false,listenRatio=0,lightTarget=0,completionAt=0,completion=-1;
+ let raf=0,last=0,acc=0,stage='first',guided=false,listenRatio=0,lightTarget=0,completion=-1,completionLight=0,completionAge=0;
  const motion=()=>!matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 
@@ -172,7 +172,7 @@ function updateDark(dt, cap, sweep, gain){
 /* ---------------- 그래픽 칩으로 그리기 ----------------
    높이를 부드럽게(3차) 이어서 한 화소마다 물결의 기울기를 구한다.
    → 잔잔할 때는 물빛 색만. 물결이 지나갈 때만 은은한 명암과 윤기, 먹이 풀리듯 번지는 어둠,
-     유리 버튼 아래의 굴절, 테두리 스펙트럼 띠까지 한 번에 그린다. */
+     테두리 스펙트럼 띠까지 한 번에 그린다. 버튼은 DOM에서만 그린다. */
 const EN = 48, edgeE = new Float32Array(EN), edgeB = new Uint8Array(EN);
 const VS = "#version 300 es\nin vec2 aP;\nvoid main(){ gl_Position = vec4(aP, 0.0, 1.0); }";
 const FS = `#version 300 es
@@ -184,8 +184,6 @@ uniform float uPx, uTime, uLight, uCs, uCompletion;
 uniform vec3 uTop, uBot, uWhite, uGlowC;
 uniform vec4 uGlow, uEdge;
 uniform vec4 uFl[3];
-uniform vec4 uLR[5];
-uniform vec4 uLP[5];
 out vec4 outC;
 
 float hash(vec2 p){ p = fract(p * vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x * p.y); }
@@ -208,7 +206,7 @@ float hC(vec2 uv){
 vec3 water(vec2 p, out float dk){
   vec2 uv = p / uRes, tx = 1.0 / uSim;
   float hl = hC(uv - vec2(tx.x, 0.0)), hr = hC(uv + vec2(tx.x, 0.0)), hu = hC(uv - vec2(0.0, tx.y)), hd = hC(uv + vec2(0.0, tx.y));
-  vec2 g = vec2(hr - hl, hd - hu) * 0.5 * uCs;                        // 물결의 기울기
+  vec2 g = vec2(hr - hl, hd - hu) * 0.5 * uCs;
   vec3 col = mix(uTop, uBot, smoothstep(-0.15, 1.1, uv.y));          // 잔잔할 때는 물빛 색뿐
   // 물결이 지나갈 때만: 빛을 받는 쪽은 밝고 반대쪽은 그늘진다(색은 그대로, 밝기만)
   float tilt = clamp(dot(g, vec2(-0.55, -0.83)) * 2.2, -0.6, 0.6);
@@ -217,59 +215,23 @@ vec3 water(vec2 p, out float dk){
   float nh = max(dot(n, Lh), 0.0);
   float sheen = max(pow(nh, 60.0) - pow(Lh.z, 60.0), 0.0) * 0.35 + max(pow(nh, 12.0) - pow(Lh.z, 12.0), 0.0) * 0.06;
   col += vec3(sheen);
-  // A visible environment beneath the water gives transmission depth; never fade to white.
-  vec2 through = uv + g * 0.045;
-  float beam = pow(max(0.0, sin(through.x * 8.0 + through.y * 3.5 + sin(through.y * 5.0 - uTime * 0.10))), 9.0);
-  float caustic = pow(0.5 + 0.5 * sin(through.x * 19.0 + sin(through.y * 13.0 + uTime * 0.09)), 18.0);
+  // Neutral daylight drifts gently; ripples come only from voice and touch.
+  vec2 through = uv + g * 0.075 + vec2(sin(uv.y*5.0+uTime*0.22),cos(uv.x*6.0-uTime*0.17))*0.022;
+  float daylight = 0.985+0.015*sin(through.x*5.0-through.y*4.0+uTime*0.24);
   float opening = smoothstep(0.15, 1.0, uLight);
-  vec3 litTop = mix(uWhite, vec3(0.91, 0.98, 0.965), opening);
-  vec3 litBottom = mix(uBot, vec3(0.73, 0.89, 0.90), opening);
-  vec3 transmitted = mix(litTop, litBottom, smoothstep(-0.2, 1.3, through.y));
-  transmitted += vec3(0.11, 0.14, 0.10) * beam + vec3(0.025, 0.07, 0.075) * caustic;
-  col = mix(col, transmitted * (1.0 + tilt * 0.18), 0.30 + uLight * 0.70) + vec3(sheen) * 0.2;
+  vec3 litTop = mix(uWhite, vec3(0.975,0.973,0.960), opening);
+  vec3 litBottom = mix(uBot, vec3(0.915,0.919,0.912), opening);
+  vec3 transmitted = mix(litTop,litBottom,smoothstep(-0.2,1.3,through.y))*daylight;
+  col = mix(col,transmitted*(1.0+tilt*0.12),0.30+uLight*0.70)+vec3(sheen)*0.2;
 
   float d = texture(uD, uv).r;
   float e = d * (1.0 - d) * 4.0;
   float nz = fbm(p / (uPx * 80.0) + vec2(uTime * 0.035, -uTime * 0.025));
   d = clamp(d + (nz - 0.5) * 0.7 * e, 0.0, 1.0);
-  vec3 ink = mix(vec3(0.016, 0.02, 0.035), vec3(0.07, 0.04, 0.11), e * 0.5) + (nz - 0.5) * 0.012;
+  vec3 ink = mix(vec3(0.014,0.015,0.018),vec3(0.075,0.076,0.078),e*0.5)+(nz-0.5)*0.008;
   col = mix(col, ink, d * 0.97);
   dk = d;
   return col;
-}
-
-// Adapted meniscus/Snell/Fresnel principles from webgl-apple-liquid-glass (MIT).
-// See licenses/webgl-apple-liquid-glass.txt. One canvas, at most five lenses.
-vec2 lensWarp(vec2 p, out vec2 dispersion, out vec2 coating){
-  vec2 q = p; dispersion = vec2(0.0); coating = vec2(0.0);
-  for (int i = 0; i < 5; i++){
-    float a = uLP[i].z;
-    if (a < 0.02) continue;
-    vec2 hs = uLR[i].zw, d = p - uLR[i].xy;
-    float r = uLP[i].x;
-    vec2 k = abs(d) - (hs - r);
-    float sd = length(max(k, 0.0)) + min(max(k.x, k.y), 0.0) - r;
-    if (sd > uPx) continue;
-    a *= 1.0 - smoothstep(-uPx, uPx, sd);
-    float bevel = max(3.0 * uPx, min(hs.x, hs.y) * 0.28);
-    float t = clamp(-sd / bevel, 0.0, 1.0), ct = 1.0 - t;
-    float h = sqrt(max(1.0 - ct * ct, 0.0));
-    vec2 outward = (k.x > 0.0 && k.y > 0.0) ? normalize(k) * sign(d) : (k.x > k.y ? vec2(sign(d.x), 0.0) : vec2(0.0, sign(d.y)));
-    float height = min(hs.x, hs.y) * 0.32;
-    vec3 n = normalize(vec3(-outward * (height / bevel) * ct / max(h, 0.12), 1.0));
-    vec3 ray = refract(vec3(0.0, 0.0, -1.0), n, 1.0 / 1.46);
-    vec2 shift = ray.xy / max(-ray.z, 0.25) * height * mix(0.25, 1.0, h);
-    float limit = bevel * 1.15;
-    shift /= 1.0 + length(shift) / limit;
-    q += (shift - d * (1.0 - 1.0 / uLP[i].y) * h) * a;
-    dispersion += outward * ct * ct * 0.65 * uPx * a;
-    float fresnel = 0.04 + 0.96 * pow(1.0 - n.z, 5.0);
-    float facing = dot(outward, normalize(vec2(-0.65, -0.76)));
-    float rim = exp(-pow((sd + 0.7 * uPx) / (1.15 * uPx), 2.0));
-    coating.x += a * (fresnel * 0.14 + rim * (0.06 + 0.16 * max(facing, 0.0)));
-    coating.y += a * (ct * ct * 0.04 + rim * 0.065 * max(-facing, 0.0));
-  }
-  return clamp(q, vec2(0.5), uRes - 0.5);
 }
 
 vec3 lights(vec2 p){
@@ -283,7 +245,7 @@ vec3 lights(vec2 p){
     float radius = uCompletion * length(uRes);
     float distance = length(p - uRes * vec2(0.5, 0.44));
     float wave = exp(-pow((distance-radius)/(uRes.y*0.16),2.0));
-    c += vec3(0.32,0.36,0.30) * wave * (1.0-uCompletion);
+    c += vec3(0.18) * wave * pow(sin(3.14159265*uCompletion),2.0);
   }
   return c;
 }
@@ -328,17 +290,7 @@ vec3 edgeBand(vec2 p){
 void main(){
   vec2 p = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
   float dk = 0.0;
-  vec2 dispersion, coating;
-  vec2 q = lensWarp(p, dispersion, coating);
-  vec3 col = water(q, dk);
-  if (dot(dispersion, dispersion) > 0.001){
-    float unused;
-    col.r = water(clamp(q + dispersion, vec2(0.5), uRes - 0.5), unused).r;
-    col.b = water(clamp(q - dispersion, vec2(0.5), uRes - 0.5), unused).b;
-  }
-  col = col * (1.0 - coating.y) + coating.x;
-  col += lights(p);
-  col += edgeBand(p) * (1.0 - 0.5 * uLight);
+  vec3 col = water(p, dk) + lights(p) + edgeBand(p) * (1.0 - 0.5 * uLight);
   col += (hash(p + fract(uTime * 7.31) * 91.7) - 0.5) / 255.0;
   outC = vec4(clamp(col, 0.0, 1.0), 1.0);
 }`;
@@ -363,7 +315,7 @@ function initGL(){
     g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, g.CLAMP_TO_EDGE); g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE);
     return t;
   };
-  G = { u, tH: tex(0), tD: tex(1), tE: tex(2), fl: new Float32Array(12), lr: new Float32Array(20), lp: new Float32Array(20) };
+  G = { u, tH: tex(0), tD: tex(1), tE: tex(2), fl: new Float32Array(12) };
   g.pixelStorei(g.UNPACK_ALIGNMENT, 1);
   g.activeTexture(g.TEXTURE2); g.texImage2D(g.TEXTURE_2D, 0, g.R8, EN, 1, 0, g.RED, g.UNSIGNED_BYTE, null);
   g.uniform1i(u.uH, 0); g.uniform1i(u.uD, 1); g.uniform1i(u.uE, 2);
@@ -393,40 +345,34 @@ function renderGL(){
   G.fl.fill(0);
   flashes.slice(-3).forEach((f, i) => G.fl.set([f.x * W, f.y * H, (0.1 + f.t * 0.55) * Math.max(W, H), (1 - f.t / 1.6) * 0.55], i * 4));
   g.uniform4fv(u.uFl, G.fl);
-  G.lr.fill(0);G.lp.fill(0);LENS.forEach(([el, mag], i) => {
-    const b = el.getBoundingClientRect(), style = getComputedStyle(el);
-    G.lr.set([(b.left + b.width / 2) * S, (b.top + b.height / 2) * S, b.width / 2 * S, b.height / 2 * S], i * 4);
-    G.lp.set([glassRadius(b,style) * S, mag, b.width > 2 ? glassOpacity(el,style) : 0, 0], i * 4);
-  });
-  g.uniform4fv(u.uLR, G.lr); g.uniform4fv(u.uLP, G.lp);
   g.uniform4f(u.uEdge, 3 * S, 46 * S, edgeV, 0);
   g.drawArrays(g.TRIANGLES, 0, 3);
 }
 
 /* ---------------- 2D 캔버스로 그리기(그래픽 칩을 못 쓸 때) ---------------- */
 function shade(light){
-  const d = img.data, PT = palCur.top, PB = palCur.bot, PW = palCur.white, s1 = 0.5 * 1.667 / CELL;
-  for (let y = 0; y < GH; y++){
-    const up = y > 0 ? -GW : 0, dn = y < GH - 1 ? GW : 0, gy = smooth(-0.15, 1.1, y / GH);
-    const deepR = lerp(PT[0], PB[0], gy), deepG = lerp(PT[1], PB[1], gy), deepB = lerp(PT[2], PB[2], gy);
-    for (let x = 0; x < GW; x++){
-      const i = y * GW + x, lf = x > 0 ? -1 : 0, rt = x < GW - 1 ? 1 : 0;
-      const tilt = clamp(-((A[i + rt] - A[i + lf]) * 0.55 + (A[i + dn] - A[i + up]) * 0.83) * s1 * 2.2, -0.6, 0.6), k1 = 1 + tilt * 0.9;
-      let r = deepR * k1, g = deepG * k1, b = deepB * k1;
-      const tx=x/GW+(A[i+rt]-A[i+lf])*.023,ty=y/GH+(A[i+dn]-A[i+up])*.023;
-      const beam=Math.max(0,Math.sin(tx*8+ty*3.5+Math.sin(ty*5-T*.10)))**9;
-      const caustic=(.5+.5*Math.sin(tx*19+Math.sin(ty*13+T*.09)))**18;
-      const depth=smooth(-.2,1.3,ty),transmission=.30+light*.70,k2=1+tilt*.18,opening=smooth(.15,1,light);
-      r=lerp(r,(lerp(lerp(PW[0],232,opening),lerp(PB[0],187,opening),depth)+28*beam+6*caustic)*k2,transmission);
-      g=lerp(g,(lerp(lerp(PW[1],250,opening),lerp(PB[1],227,opening),depth)+36*beam+18*caustic)*k2,transmission);
-      b=lerp(b,(lerp(lerp(PW[2],246,opening),lerp(PB[2],230,opening),depth)+26*beam+19*caustic)*k2,transmission);
-
-      const k = D[i] * 0.97, o = i * 4;
-      d[o] = r * (1 - k) + 4 * k; d[o + 1] = g * (1 - k) + 5 * k; d[o + 2] = b * (1 - k) + 9 * k; d[o + 3] = 255;
+  const d=img.data,PT=palCur.top,PB=palCur.bot,PW=palCur.white,cs=0.5*1.667/CELL,opening=smooth(.15,1,light);
+  for(let y=0;y<GH;y++){
+    const up=y>0?-GW:0,dn=y<GH-1?GW:0,fy=y/GH,depth=smooth(-.15,1.1,fy);
+    for(let x=0;x<GW;x++){
+      const i=y*GW+x,lf=x>0?-1:0,rt=x<GW-1?1:0,fx=x/GW;
+      const gx=(A[i+rt]-A[i+lf])*cs;
+      const gy=(A[i+dn]-A[i+up])*cs;
+      const tilt=clamp((-gx*.55-gy*.83)*2.2,-.6,.6);
+      const tx=fx+gx*.075+Math.sin(fy*5+T*.22)*.022,ty=fy+gy*.075+Math.cos(fx*6-T*.17)*.022;
+      const daylight=.985+.015*Math.sin(tx*5-ty*4+T*.24);
+      const top=[248.6,248.1,244.8],bottom=[233.3,234.3,232.6],k=D[i]*.97;
+      for(let c=0;c<3;c++){
+        const deep=lerp(PT[c],PB[c],depth)*(1+tilt*.9);
+        const through=lerp(lerp(PW[c],top[c],opening),lerp(PB[c],bottom[c],opening),smooth(-.2,1.3,ty))*daylight;
+        d[i*4+c]=lerp(lerp(deep,through*(1+tilt*.12),.30+light*.70),[3.57,3.83,4.59][c],k);
+      }
+      d[i*4+3]=255;
     }
   }
-  simCtx.putImageData(img, 0, 0);
+  simCtx.putImageData(img,0,0);
 }
+
 let edgePts = [];
 function buildEdge(){
   const m = 3 * S, w = W - 2 * m, h = H - 2 * m, r = Math.min(46 * S, w / 2, h / 2);
@@ -479,19 +425,6 @@ function drawEdge(T){
   }
   ctx.restore();
 }
-function rr(x, y, w, h, r){ ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
-function lens(el, mag, alpha){
-  if (alpha < 0.02) return;
-  const b = el.getBoundingClientRect(); if (b.width < 2) return;
-  const style=getComputedStyle(el);alpha*=glassOpacity(el,style);const x = b.left * S, y = b.top * S, w = b.width * S, h = b.height * S, r = glassRadius(b,style)*S;
-  const kx = GW / W, ky = GH / H, cx = (x + w / 2) * kx, cy = (y + h / 2) * ky, sw = w * kx / mag, sh = h * ky / mag;
-  ctx.save(); rr(x, y, w, h, r); ctx.clip();
-  ctx.globalAlpha = alpha;
-  ctx.drawImage(simCv, cx - sw / 2, cy - sh / 2, sw, sh, x - w * 0.02, y - h * 0.04, w * 1.04, h * 1.08);
-  ctx.globalCompositeOperation = "lighter";
-  ctx.fillStyle = `rgba(255,255,255,${(0.05 * alpha).toFixed(3)})`; ctx.fillRect(x, y, w, h);
-  ctx.restore();
-}
 function render2D(){
   shade(light);
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
@@ -509,7 +442,6 @@ function render2D(){
     g.addColorStop(0, `rgba(${P},${(0.36 * glowA).toFixed(3)})`); g.addColorStop(1, `rgba(${P},0)`);
     ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = g; ctx.fillRect(x - R, y - R, R * 2, R * 2); ctx.restore();
   }
-  for (const [el, mag] of LENS) lens(el, mag, uiV);
   drawEdge(T);
 }
 
@@ -524,33 +456,42 @@ function edgeTick(f){
 }
 
 
- function glassRadius(box,style){const value=style.borderTopLeftRadius,r=parseFloat(value)||0;return Math.min(box.width/2,box.height/2,value.endsWith('%')?Math.min(box.width,box.height)*r/100:r);}
- function glassOpacity(el,style){const nav=el.closest('.nav');return Number(style.opacity)*(nav&&nav!==el?Number(getComputedStyle(nav).opacity):1)*uiV;}
- function measure(){LENS=[...document.querySelectorAll('.nav'),...document.querySelectorAll('.primary,.secondary')].filter(e=>{const b=e.getBoundingClientRect();return b.width>2&&b.bottom>0&&b.top<innerHeight&&getComputedStyle(e).visibility!=='hidden';}).slice(0,5).map(e=>[e,1.018]);}
- function resize(){S=Math.min(devicePixelRatio||1,2,Math.sqrt(2400000/(innerWidth*innerHeight)));W=Math.round(innerWidth*S);H=Math.round(innerHeight*S);cv.width=W;cv.height=H;initSim();if(ctx)buildEdge();measure();wake();}
- function setStage(next){if(stage!==next&&next==='clear'){completionAt=performance.now();if(motion())ring(.5,.44,50,.65);}stage=next;document.body.dataset.waterStage=stage;cv.dataset.stage=stage;}
- function begin(s){if(s.kind!=='read')return;journeyKey=s.attempt;complete=false;completionAt=0;inputAmount=0;volumeEnvelope=0;progressValue=Math.min(.88,VoicePractice.clarity(s.waterSeconds));listenRatio=0;light=progressValue;D?.fill(1-progressValue);A?.fill(0);B?.fill(0);edgeE.fill(0);edgeB.fill(0);BANDS.forEach(b=>b.e=0);setStage('first');cv.dataset.phase='ink';wake();}
+ function resize(){S=Math.min(devicePixelRatio||1,2,Math.sqrt(2400000/(innerWidth*innerHeight)));W=Math.round(innerWidth*S);H=Math.round(innerHeight*S);cv.width=W;cv.height=H;initSim();if(ctx)buildEdge();wake();}
+ function setStage(next){stage=next;document.body.dataset.waterStage=stage;cv.dataset.stage=stage;}
+ function begin(s){if(s.kind!=='read')return;journeyKey=s.attempt;complete=false;inputAmount=0;volumeEnvelope=0;progressValue=Math.min(.88,VoicePractice.clarity(s.waterSeconds));listenRatio=0;A?.fill(0);B?.fill(0);edgeE.fill(0);edgeB.fill(0);BANDS.forEach(b=>b.e=0);setStage('first');cv.dataset.phase='ink';wake();}
  function sound(s){if(s.kind!=='read'||s.attempt!==journeyKey)return;progressValue=Math.max(progressValue,Math.min(.88,VoicePractice.clarity(((s.waterSeconds||0)+(s.voiceSeconds||0))*1.5)));cv.dataset.phase=complete?'clear':progressValue?'opening':'ink';document.body.dataset.readingPhase=cv.dataset.phase;wake();}
- function reading(ratio){const p=clamp(Number(ratio)||0,0,1);progressValue=Math.max(progressValue,p);if(p>=1&&!complete){complete=true;cv.dataset.phase='clear';document.body.dataset.readingPhase='clear';completionAt=performance.now();if(motion()){ring(.5,.44,65,1.4);flashes.push({x:.5,y:.44,t:0});}setStage('clear');}wake();}
+ function finish(){if(complete)return;complete=true;completionAge=0;progressValue=1;completionLight=light;cv.dataset.phase='clear';document.body.dataset.readingPhase='clear';if(motion()){ring(.5,.44,65,.7);}setStage('clear');wake();}
+ function reading(ratio){const p=clamp(Number(ratio)||0,0,1);progressValue=Math.max(progressValue,p);wake();}
  function playback(r,ratio){if(state.view!=='result')return;listenRatio=Math.max(listenRatio,ratio);cv.dataset.listenProgress=listenRatio.toFixed(3);wake();}
- function refresh(){const session=state.capture?.session;if(session){if(session.attempt!==journeyKey)begin(session);else setStage(complete?'clear':'first');}else if(state.view==='welcome'){progressValue=0;complete=false;completionAt=0;light=0;D?.fill(1);setStage('welcome');}else if(['result','done'].includes(state.view)&&state.current){const value=Math.max(state.current.readingProgress||0,Math.min(.88,VoicePractice.clarity((state.current.waterSeconds||state.current.voicedSeconds||0)*1.5)));if(value!==progressValue)D?.fill(1-value);progressValue=value;reading(value);setStage(value>=1?'clear':'listen');}else setStage('rest');measure();wake();}
+ function refresh(){
+  const session=state.capture?.session;
+  if(session){if(session.attempt!==journeyKey)begin(session);else setStage('first');}
+  else if(state.view==='done'&&state.current?.completedAt){finish();}
+  else if(state.view==='result'&&state.current){
+   complete=false;completionAge=0;
+   progressValue=Math.max(state.current.readingProgress||0,Math.min(.88,VoicePractice.clarity((state.current.waterSeconds||state.current.voicedSeconds||0)*1.5)));
+   setStage('listen');
+  }else{progressValue=0;complete=false;completionAge=0;journeyKey=null;listenRatio=0;cv.dataset.phase='ink';document.body.dataset.readingPhase='ink';setStage(state.view==='welcome'?'welcome':'rest');}
+  wake();
+ }
 
  function voice(r,rms){V.ac=r.ac;V.an=r.an;voiceAt=performance.now();const level=VoicePractice.inputLevel(rms);inputAmount=level.amount;talking=inputAmount>0;cv.dataset.inputDbfs=level.db===null?'silent':level.db.toFixed(1);if(!frequency||frequency.length!==r.an.frequencyBinCount)frequency=new Uint8Array(r.an.frequencyBinCount);r.an.getByteFrequencyData(frequency);const el=document.querySelector('.reading-card')||document.querySelector('.primary');if(el){const box=el.getBoundingClientRect();bandX=clamp((box.left+box.width/2)/innerWidth,.03,.97);bandY=clamp((box.top+box.height/2)/innerHeight,.03,.97);glowX=bandX;glowY=bandY;}wake();}
  function frame(now){raf=0;if(document.hidden)return;const dt=Math.min(.05,last?(now-last)/1000:.016);last=now;T+=dt;
- const active=!!(state.capture||glassPlayback)&&now-voiceAt<400,f=active?frequency:null,speaking=active&&talking;
+ const active=!!(state.capture||glassPlayback||['tuning','mouth'].includes(state.view))&&now-voiceAt<400,f=active?frequency:null,speaking=active&&talking;
  const targetVolume=speaking?inputAmount:0;volumeEnvelope+=(targetVolume-volumeEnvelope)*(1-Math.exp(-dt/(targetVolume>volumeEnvelope?.07:.24)));cv.dataset.waveStrength=volumeEnvelope.toFixed(3);cv.dataset.waveWidth=(.60+volumeEnvelope*1.65).toFixed(3);
- completion=complete&&completionAt?(now-completionAt)/2600:-1;
- lightTarget=progressValue;light+=(lightTarget-light)*(motion()?1-Math.exp(-dt/.9):1);const cap=1-light;
- document.body.dataset.waterTone=light>.85?'luminous':light>.6?'clear':'dark';cv.dataset.completion=completion.toFixed(3);cv.dataset.darkness=cap.toFixed(3);cv.dataset.light=light.toFixed(3);cv.dataset.clarity=progressValue.toFixed(3);
+ if(complete)completionAge+=dt;completion=complete?completionAge/4.2:-1;
+ lightTarget=complete?1:Math.min(1,progressValue)*.42;if(complete){light=motion()?lerp(completionLight,1,smooth(0,1,completion)):1;}else light+=(lightTarget-light)*(motion()?1-Math.exp(-dt/1.4):1);if(Math.abs(lightTarget-light)<.001)light=lightTarget;const cap=1-light;
+ const uiMix=smooth(.48,.85,light);document.body.style.setProperty('--water-ui',(uiMix*100).toFixed(2)+'%');document.body.style.setProperty('--water-logo-opacity',uiMix.toFixed(3));document.body.dataset.waterTone=light>.85?'luminous':light>.45?'clear':'dark';cv.dataset.completion=completion.toFixed(3);cv.dataset.darkness=cap.toFixed(3);cv.dataset.light=light.toFixed(3);cv.dataset.clarity=progressValue.toFixed(3);
  if(motion()){bandTick(dt,f,speaking);edgeTick(f);acc+=dt*SPS;let n=0;while(acc>=1&&n<8){bandForce();step();acc--;n++;}if(acc>2)acc=0;if(n)soften(Math.min(.2,VISC*n));updateDark(dt,cap,completion>=0&&completion<1?completion*1.4:0,progressValue>0&&speaking?2.2:0);for(let i=0;i<D.length;i++)D[i]=Math.max(cap*.9,D[i]);}
  else{D.fill(cap);edgeV=0;glowA=0;}
+ if(light===0&&progressValue===0)D.fill(1);
 
  edgeT=active?(speaking?.1+.9*volumeEnvelope:.04):0;edgeV+=(edgeT-edgeV)*(1-Math.exp(-dt/.25));glowT=Math.max(speaking?.1+.9*volumeEnvelope:0,glowT*Math.exp(-dt*1.2));glowA+=(glowT-glowA)*(1-Math.exp(-dt/.25));stepPalette(dt);
  flashes.forEach(f=>f.t+=dt);flashes=flashes.filter(f=>f.t<1.6);if(!motion())flashes=[];
- if(now-lastLayout>250){measure();lastLayout=now;}if(gl)renderGL();else render2D();if(motion())raf=requestAnimationFrame(frame);
+ if(gl)renderGL();else render2D();if(motion())raf=requestAnimationFrame(frame);
  }
  function wake(){if(!raf&&!document.hidden){last=0;raf=requestAnimationFrame(frame);}}
  if(!initGL())use2D();document.body.dataset.waterRenderer=cv.dataset.renderer;resize();refresh();document.addEventListener('pointerdown',e=>{if(!motion()||e.target.closest('input,textarea,select,dialog,audio'))return;ring(e.clientX/innerWidth,e.clientY/innerHeight,27,1.2);wake();},{passive:true});
- if(window.ResizeObserver)new ResizeObserver(()=>{measure();wake();}).observe($('main'));window.addEventListener('resize',resize,{passive:true});window.addEventListener('scroll',()=>{measure();wake();},{passive:true});window.visualViewport?.addEventListener('scroll',()=>{measure();wake();},{passive:true});window.visualViewport?.addEventListener('resize',resize,{passive:true});document.addEventListener('toggle',()=>{measure();wake();},true);document.fonts?.ready.then(()=>{measure();wake();});document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelAnimationFrame(raf);raf=0;}else wake();});matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',()=>{A.fill(0);B.fill(0);wake();});
- return {begin,sound,reading,playback,voice,refresh,wake,previewPulse(){if(motion())ring(.5,.65,30,.7);wake();},quiet(){V.ac=null;V.an=null;frequency=null;talking=false;inputAmount=0;wake();}};
+ window.addEventListener('resize',resize,{passive:true});window.visualViewport?.addEventListener('resize',resize,{passive:true});document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelAnimationFrame(raf);raf=0;}else wake();});matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',()=>{A.fill(0);B.fill(0);wake();});
+ return {begin,sound,reading,finish,playback,voice,refresh,wake,previewPulse(){if(motion())ring(.5,.65,30,.7);wake();},quiet(){V.ac=null;V.an=null;frequency=null;talking=false;inputAmount=0;wake();}};
 })();

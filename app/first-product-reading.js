@@ -45,22 +45,75 @@ const ReadingFeedback=(()=>{
  }
  function setStatus(message){const el=document.getElementById('reading-status');if(el)el.textContent=message;}
  function pcmWindow(r,start,end){const out=new Float32Array(end-start);let offset=0;for(const chunk of r.chunks){const lo=Math.max(start-offset,0),hi=Math.min(end-offset,chunk.length);if(hi>lo)out.set(chunk.subarray(lo,hi),offset+lo-start);offset+=chunk.length;if(offset>=end)break;}return out;}
- function begin(r){if(r.story.id==='sq-vowel-a-v1')return;r.reading={cursor:0,seen:new Set(),stopped:false};setStatus('녹음 중');const start=()=>{if(!r.reading.stopped){setStatus('말을 듣고 있어요');r.reading.timer=setTimeout(()=>listen(r),5500);}};if(window.BetaAccess?.remote)window.BetaAccess.ensure().then(available=>{if(available)start();}).catch(()=>{});else start();}
- async function listen(r){const s=r.reading;if(s.stopped||state.capture!==r)return;
-  const end=r.chunks.reduce((n,c)=>n+c.length,0),sr=r.ac.sampleRate,start=Math.max(0,end-Math.round(sr*12));
-  if(end-start<sr*3||document.hidden){s.timer=setTimeout(()=>listen(r),3000);return;}
-  const controller=s.controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),25000);
-  try{const response=await fetch('/api/pace',{method:'POST',headers:{'Content-Type':'audio/wav'},body:wave(pcmWindow(r,start,end),sr,16),signal:controller.signal});if(!response.ok)throw Error('offline');const t=await response.json();if(s.stopped||state.capture!==r)return;
-   if(t.status==='ready'){
-    const chars=letters(r.story.text),offset=Math.max(0,s.cursor-65),match=align(chars.slice(offset).join(''),t.transcript,true);
-    if(match.matches.length>=4&&match.agreement>=.6){const confirmed=match.matches.map(i=>i+offset),fresh=confirmed.filter(i=>!s.seen.has(i));confirmed.forEach(i=>s.seen.add(i));s.cursor=Math.max(s.cursor,...confirmed.map(i=>i+1));
-     document.querySelectorAll('.reading-card [data-pos]').forEach(el=>{const i=Number(el.dataset.pos);el.classList.toggle('heard',s.seen.has(i));el.classList.toggle('word-wave',fresh.includes(i));});r.readingProgress=s.seen.size/Math.max(1,chars.length);Water.reading(r.readingProgress);setStatus('읽기 '+Math.floor(r.readingProgress*100)+'%');
-    }else setStatus('녹음은 계속되고 있어요');
-   }else setStatus(t.status==='busy'?'인식 대기 · 녹음 중':'녹음 중 · 잠시 후 다시 인식해요');
-  }catch{if(!s.stopped)setStatus('녹음 중 · 글자 인식은 잠시 쉬어요');}
-  finally{clearTimeout(timeout);if(!s.stopped)s.timer=setTimeout(()=>listen(r),3500);}
+ let connection=null;
+ async function prepare(){
+  if(window.BetaAccess?.remote)return null;
+  try{const response=await fetch('/api/status',{signal:AbortSignal.timeout(1800)});const info=await response.json();connection=response.ok&&info.local===true?info.streaming:null;}catch{connection=null;}
+  return connection;
  }
- function stop(r){if(!r?.reading)return;r.reading.stopped=true;clearTimeout(r.reading.timer);r.reading.controller?.abort();}
+ function paint(r,pending=[],fresh=[]){
+  const s=r.reading,preview=new Set(pending),pulse=new Set(fresh);
+  document.querySelectorAll('.reading-card [data-pos]').forEach(el=>{const i=Number(el.dataset.pos);el.classList.toggle('heard',s.seen.has(i));el.classList.toggle('is-hearing',preview.has(i)&&!s.seen.has(i));el.classList.toggle('word-wave',pulse.has(i));});
+  const total=letters(r.story.text).length;r.readingProgress=s.seen.size/Math.max(1,total);
+  Water.reading(r.readingProgress);setStatus('읽기 '+Math.floor(new Set([...s.seen,...pending]).size/Math.max(1,total)*100)+'%');
+ }
+ function streamResult(r,result){
+  const s=r.reading;if(s.stopped||state.capture!==r||!Number.isInteger(result.segment)||result.segment<0||result.segment>200||typeof result.text!=='string'||result.text.length>4000)return;
+  if(result.final)s.finals.set(result.segment,result.text);
+  const finalText=[...s.finals].sort((a,b)=>a[0]-b[0]).map(x=>x[1]).join(' '),finalMatch=align(r.story.text,finalText,true);
+  const next=new Set(finalMatch.agreement>=.65?finalMatch.matches:[]),fresh=[...next].filter(i=>!s.seen.has(i));s.seen=next;
+  const preview=result.final?null:align(r.story.text,finalText+' '+result.text,true);
+  const pending=preview&&preview.agreement>=.65&&preview.matches.length>=2?preview.matches:[];
+  paint(r,pending,fresh);
+  const el=document.getElementById('reading-status');if(el){el.dataset.recognitionMode='google-stream';el.dataset.interim=String(!result.final);el.dataset.pending=String(pending.length);el.dataset.confirmed=String(s.seen.size);if(!el.dataset.firstResultMs)el.dataset.firstResultMs=String(Math.round(performance.now()-s.started));}
+ }
+ function closeStream(s){clearInterval(s.pump);clearTimeout(s.openTimeout);if(s.socket){s.socket.onopen=s.socket.onmessage=s.socket.onclose=s.socket.onerror=null;s.socket.close();s.socket=null;}}
+ function local(r){const s=r.reading;if(s.stopped||state.capture!==r||s.local)return;s.local=true;s.device=!!window.DeviceSpeech?.enabled;closeStream(s);paint(r);s.cursor=s.seen.size?Math.max(...s.seen)+1:0;setStatus(s.device?DeviceSpeech.label():'이 PC에서 인식 중');s.timer=setTimeout(()=>listen(r),200);}
+ async function begin(r){
+  if(r.story.id==='sq-vowel-a-v1')return;
+  const s=r.reading={cursor:0,seen:new Set(),finals:new Map(),stopped:false,lastSent:0,legacy:!!window.BetaAccess?.remote,started:performance.now()};setStatus('말을 듣고 있어요');
+  if(window.DeviceSpeech?.enabled){local(r);return;}
+  if(s.legacy){setStatus('녹음 중 · 설정에서 문장 인식을 준비해 주세요');return;}
+  const info=connection||await prepare();if(s.stopped||state.capture!==r)return;
+  if(!info||!['configured','ready'].includes(info.status)||!Number.isInteger(info.port)||typeof info.ticket!=='string'||!['localhost','127.0.0.1'].includes(location.hostname)){local(r);return;}
+  try{
+   const socket=s.socket=new WebSocket(`ws://${location.hostname}:${info.port}/api/stream?ticket=${encodeURIComponent(info.ticket)}`);
+   s.openTimeout=setTimeout(()=>local(r),3000);
+   socket.onopen=()=>{if(s.stopped)return;socket.send(JSON.stringify({type:'start',sampleRate:r.ac.sampleRate}));};
+   socket.onmessage=e=>{
+    if(s.stopped||state.capture!==r)return;let message;try{message=JSON.parse(e.data);}catch{local(r);return;}
+    if(message.type==='error'){local(r);return;}
+    if(message.type==='result'){streamResult(r,message);return;}
+    if(message.type!=='ready'||s.pump)return;
+    clearTimeout(s.openTimeout);s.sent=0;
+    s.pump=setInterval(()=>{
+     if(s.stopped||state.capture!==r)return;
+     if(socket.readyState!==1||socket.bufferedAmount>480000){local(r);return;}
+     const end=r.chunks.reduce((n,x)=>n+x.length,0),size=Math.round(r.ac.sampleRate*.1);
+     while(end-s.sent>=size){const pcm=pcmWindow(r,s.sent,s.sent+size),buffer=new ArrayBuffer(pcm.length*2),view=new DataView(buffer);for(let i=0;i<pcm.length;i++){const v=Math.max(-1,Math.min(1,pcm[i]));view.setInt16(i*2,Math.round(v*(v<0?32768:32767)),true);}socket.send(buffer);s.sent+=size;}
+    },100);
+   };
+   socket.onerror=socket.onclose=()=>local(r);
+  }catch{local(r);}
+ }
+ async function listen(r){const s=r.reading;if(s.stopped||state.capture!==r)return;
+  if(s.device&&!DeviceSpeech.ready){setStatus('녹음 중 · '+DeviceSpeech.label());s.timer=setTimeout(()=>listen(r),1000);return;}
+  const end=r.chunks.reduce((n,c)=>n+c.length,0),sr=r.ac.sampleRate,start=Math.max(0,end-Math.round(sr*(s.legacy&&!s.device?12:8)));
+  if(end-start<sr*(s.device?2.4:s.legacy?3:1.8)||end-s.lastSent<sr*.9||document.hidden){s.timer=setTimeout(()=>listen(r),200);return;}
+  const controller=s.controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),s.device?120000:s.legacy?25000:12000),requested=performance.now();s.lastSent=end;
+  try{let t;if(s.device){t=await DeviceSpeech.recognize(pcmWindow(r,start,end),sr,{signal:controller.signal});}else{const response=await fetch('/api/listen',{method:'POST',headers:{'Content-Type':'audio/wav'},body:wave(pcmWindow(r,start,end),sr,16),signal:controller.signal});if(!response.ok)throw Error('offline');t=await response.json();}if(s.stopped||state.capture!==r)return;
+   if(t.status==='ready'){
+    const chars=letters(r.story.text),offset=Math.max(0,s.cursor-Math.ceil((end-start)/sr*12)),match=align(chars.slice(offset).join(''),t.transcript,true);
+    if(match.matches.length>=3&&match.agreement>=.65){const confirmed=match.matches.map(i=>i+offset),fresh=confirmed.filter(i=>!s.seen.has(i));confirmed.forEach(i=>s.seen.add(i));s.cursor=Math.max(s.cursor,...confirmed.map(i=>i+1));
+     paint(r,[],fresh);
+    }else setStatus('녹음은 계속되고 있어요');
+   }else setStatus(t.status==='busy'?'인식 대기 · 녹음 중':t.status==='loading'?'인식 준비 중 · 녹음 중':'녹음 중 · 잠시 후 다시 인식해요');
+   const status=document.getElementById('reading-status');if(status){status.dataset.recognitionMs=Math.round(performance.now()-requested);status.dataset.recognitionMode=s.device?'whisper-device':'live-local';if(t.status==='ready'&&!status.dataset.firstResultMs)status.dataset.firstResultMs=String(Math.round(performance.now()-s.started));}
+  }catch{if(!s.stopped)setStatus('녹음 중 · 글자 인식은 잠시 쉬어요');}
+  finally{clearTimeout(timeout);if(s.device&&performance.now()-requested>4500&&!s.stopped){setStatus('녹음 중 · 문장은 녹음 후 확인해요');return;}if(!s.stopped)s.timer=setTimeout(()=>listen(r),s.device?600:Math.max(180,1200-(performance.now()-requested)));}
+ }
+ function stop(r){if(!r?.reading)return;r.reading.stopped=true;clearTimeout(r.reading.timer);r.reading.controller?.abort();closeStream(r.reading);}
+ window.addEventListener('pagehide',()=>stop(state.capture));
  for(const name of ['play','timeupdate','seeked','pause','ended'])document.addEventListener(name,e=>{if(e.target.tagName==='AUDIO')playback(e.target);},true);
- return {letters,paragraphs,markup,align,assessment,report,begin,stop};
+ return {letters,paragraphs,markup,align,assessment,report,begin,stop,prepare,streamResult};
 })();
