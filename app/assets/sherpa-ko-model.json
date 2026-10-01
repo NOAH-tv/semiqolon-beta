@@ -1,0 +1,64 @@
+{
+  "version": "korean-20240616-sherpa-1.12.14",
+  "files": [
+    {
+      "name": "encoder.onnx",
+      "bytes": 126968852,
+      "parts": [
+        {
+          "url": "sherpa-ko-encoder.onnx.0.bin",
+          "bytes": 41943040,
+          "sha256": "fb201ec7451d16ba7067e243da86713426e6f4c66dc80451364c2ba662256aff"
+        },
+        {
+          "url": "sherpa-ko-encoder.onnx.1.bin",
+          "bytes": 41943040,
+          "sha256": "bca398f61d63df100cb278937bc19c3464ada6bb6c0e0522d644fe9cecd4c237"
+        },
+        {
+          "url": "sherpa-ko-encoder.onnx.2.bin",
+          "bytes": 41943040,
+          "sha256": "c2677b84dd2ed7c6348cb13b26933994faf00ab1929078b976dee307a163bb8c"
+        },
+        {
+          "url": "sherpa-ko-encoder.onnx.3.bin",
+          "bytes": 1139732,
+          "sha256": "e05b6c41a550e52d5315abcb2231e997dae10930fd63cb5491b21648f500a573"
+        }
+      ]
+    },
+    {
+      "name": "decoder.onnx",
+      "bytes": 11309084,
+      "parts": [
+        {
+          "url": "sherpa-ko-decoder.onnx.0.bin",
+          "bytes": 11309084,
+          "sha256": "b29cfb4575141e50a30a22b2c4579934f3d4f45b83c9c8c08c3aef5a3fa7abfc"
+        }
+      ]
+    },
+    {
+      "name": "joiner.onnx",
+      "bytes": 2581421,
+      "parts": [
+        {
+          "url": "sherpa-ko-joiner.onnx.0.bin",
+          "bytes": 2581421,
+          "sha256": "128b80a66a1f718488af8560f9d15895109b99ff3e573f0a0130e03774ef1ced"
+        }
+      ]
+    },
+    {
+      "name": "tokens.txt",
+      "bytes": 60246,
+      "parts": [
+        {
+          "url": "sherpa-ko-tokens.txt.0.bin",
+          "bytes": 60246,
+          "sha256": "016bdf0965029263b7ad01b742366ee542ef0bef38261510e8176ff6f2e9e668"
+        }
+      ]
+    }
+  ]
+}

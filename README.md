@@ -1,3 +1,16 @@
+## 2026-10-02 · 휴대폰 한국어 실시간 인식
+
+현재 테스트: https://noah-tv.github.io/semiqolon-beta/app/ · 빌드 `2026-10-02-mobile-stream`
+
+- iPhone Safari / Android·Galaxy Chrome에서 열고, **설정 → 실시간 문장 인식 → 문장 인식 준비**. 첫 다운로드 약 153 MB(Wi-Fi 권장), 이후 브라우저 캐시를 재사용합니다.
+- 한국어 Zipformer를 기기 안에서 실행합니다. 유료 인식 API나 PC 서버 연결이 필요하지 않습니다. 음성은 외부로 전송하지 않습니다.
+- 녹음 중 중간 인식 글자 표시, 종료 후 최종 인식문·토큰 시각·원음 WAV 저장. 무음에는 텍스트를 만들지 않으며 인식 실패 때도 녹음은 저장합니다.
+- 카카오톡 안에서 제한될 때는 Safari/Chrome으로 열어 주세요. 기록은 브라우저별로 따로 보관됩니다.
+- [성경 버전도 동일 엔진 적용](https://noah-tv.github.io/semi-bible-beta/) · [출처·라이선스](app/licenses/mobile-streaming-NOTICE.md)
+- PC 브라우저의 샘플 검증에서 첫 글자 약 0.75초. 실제 휴대폰 성능 수치는 아니며 기기별 시험이 더 필요합니다. 성경의 옛 표현 등에는 오인식이 남아 있습니다.
+
+아래 내용은 이전 배포 이력도 포함합니다. 현재 공개 버전은 PC 분석 서버 없이 기기 녹음·인식을 사용합니다.
+
 # SEMIQOLON · 한 문장 BETA
 
 **[테스트 시작](https://noah-tv.github.io/semiqolon-beta/app/)** · [휴대폰 테스트 안내](TESTING.md)

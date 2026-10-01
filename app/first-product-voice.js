@@ -109,5 +109,5 @@ const VoicePractice=(()=>{
  document.addEventListener('play',e=>{if(e.target.tagName==='AUDIO')stopBand();},true);
  document.addEventListener('input',e=>{if(e.target.id==='target-pitch'&&draft){draft.pitchHz=Number(e.target.value);$('target-value').textContent=draft.pitchHz+' Hz';stopTone();}});
  document.addEventListener('visibilitychange',()=>{if(document.hidden)stopTone();});
- return {VOWEL,inputLevel,dbText,levelValue,balance,bandReading,advice,metric,next,screen,actions,advanceMeasurement,live,resonance,comparison,profileCard,clarity,pitchMatch,stopTone,playTone,goalFor,levelText,transcript,transcribe,cancel(id){textJobs.get(id)?.abort();}};
+ return {VOWEL,refreshTranscript,inputLevel,dbText,levelValue,balance,bandReading,advice,metric,next,screen,actions,advanceMeasurement,live,resonance,comparison,profileCard,clarity,pitchMatch,stopTone,playTone,goalFor,levelText,transcript,transcribe,cancel(id){textJobs.get(id)?.abort();}};
 })();

@@ -65,36 +65,50 @@ const ReadingFeedback=(()=>{
   const preview=result.final?null:align(r.story.text,finalText+' '+result.text,true);
   const pending=preview&&preview.agreement>=.65&&preview.matches.length>=2?preview.matches:[];
   paint(r,pending,fresh);
-  const el=document.getElementById('reading-status');if(el){el.dataset.recognitionMode='google-stream';el.dataset.interim=String(!result.final);el.dataset.pending=String(pending.length);el.dataset.confirmed=String(s.seen.size);if(!el.dataset.firstResultMs)el.dataset.firstResultMs=String(Math.round(performance.now()-s.started));}
+  const el=document.getElementById('reading-status');if(el){el.dataset.recognitionMode=s.provider||'google-stream';el.dataset.interim=String(!result.final);el.dataset.pending=String(pending.length);el.dataset.confirmed=String(s.seen.size);if(result.text&&!el.dataset.firstResultMs)el.dataset.firstResultMs=String(Math.round(performance.now()-s.started));}
  }
  function closeStream(s){clearInterval(s.pump);clearTimeout(s.openTimeout);if(s.socket){s.socket.onopen=s.socket.onmessage=s.socket.onclose=s.socket.onerror=null;s.socket.close();s.socket=null;}}
- function local(r){const s=r.reading;if(s.stopped||state.capture!==r||s.local)return;s.local=true;s.device=!!window.DeviceSpeech?.enabled;closeStream(s);paint(r);s.cursor=s.seen.size?Math.max(...s.seen)+1:0;setStatus(s.device?DeviceSpeech.label():'이 PC에서 인식 중');s.timer=setTimeout(()=>listen(r),200);}
+ function local(r){const s=r.reading;if(s.stopped||state.capture!==r||s.local)return;s.local=true;connection=null;s.device=!!window.DeviceSpeech?.enabled;closeStream(s);paint(r);if(s.device){s.provider='sherpa-device';s.deviceStream=DeviceSpeech.capture(r,{onResult:message=>streamResult(r,message),onStatus:setStatus,active:()=>state.capture===r&&!s.stopped});return;}s.cursor=s.seen.size?Math.max(...s.seen)+1:0;setStatus(s.device?DeviceSpeech.label():'이 PC에서 인식 중');s.timer=setTimeout(()=>listen(r),200);}
  async function begin(r){
   if(r.story.id==='sq-vowel-a-v1')return;
   const s=r.reading={cursor:0,seen:new Set(),finals:new Map(),stopped:false,lastSent:0,legacy:!!window.BetaAccess?.remote,started:performance.now()};setStatus('말을 듣고 있어요');
-  if(window.DeviceSpeech?.enabled){local(r);return;}
-  if(s.legacy){setStatus('녹음 중 · 글자 표시는 인식 준비 후 켜져요');return;}
+  if(s.legacy){if(window.DeviceSpeech?.enabled)local(r);else setStatus('녹음 중 · 글자 표시는 인식 준비 후 켜져요');return;}
   const info=connection||await prepare();if(s.stopped||state.capture!==r)return;
+  if(window.DeviceSpeech?.enabled&&info?.provider!=='sherpa-local'){local(r);return;}
   if(!info||!['configured','ready'].includes(info.status)||!Number.isInteger(info.port)||typeof info.ticket!=='string'||!['localhost','127.0.0.1'].includes(location.hostname)){local(r);return;}
   try{
+   s.provider=info.provider==='sherpa-local'?'sherpa-local':'google-stream';
    const socket=s.socket=new WebSocket(`ws://${location.hostname}:${info.port}/api/stream?ticket=${encodeURIComponent(info.ticket)}`);
    s.openTimeout=setTimeout(()=>local(r),3000);
    socket.onopen=()=>{if(s.stopped)return;socket.send(JSON.stringify({type:'start',sampleRate:r.ac.sampleRate}));};
    socket.onmessage=e=>{
     if(s.stopped||state.capture!==r)return;let message;try{message=JSON.parse(e.data);}catch{local(r);return;}
-    if(message.type==='error'){local(r);return;}
+    if(message.type==='complete'&&s.finishing){s.finish?.(message.result);return;}
+    if(message.type==='error'){if(s.finishing)s.finish?.(null);else local(r);return;}
     if(message.type==='result'){streamResult(r,message);return;}
     if(message.type!=='ready'||s.pump)return;
     clearTimeout(s.openTimeout);s.sent=0;
     s.pump=setInterval(()=>{
      if(s.stopped||state.capture!==r)return;
      if(socket.readyState!==1||socket.bufferedAmount>480000){local(r);return;}
-     const end=r.chunks.reduce((n,x)=>n+x.length,0),size=Math.round(r.ac.sampleRate*.1);
-     while(end-s.sent>=size){const pcm=pcmWindow(r,s.sent,s.sent+size),buffer=new ArrayBuffer(pcm.length*2),view=new DataView(buffer);for(let i=0;i<pcm.length;i++){const v=Math.max(-1,Math.min(1,pcm[i]));view.setInt16(i*2,Math.round(v*(v<0?32768:32767)),true);}socket.send(buffer);s.sent+=size;}
+     sendAudio(r);
     },100);
    };
-   socket.onerror=socket.onclose=()=>local(r);
+   socket.onerror=socket.onclose=()=>{if(s.finishing)s.finish?.(null);else local(r);};
   }catch{local(r);}
+ }
+ function sendAudio(r,flush=false){const s=r.reading,end=r.chunks.reduce((n,x)=>n+x.length,0),size=Math.round(r.ac.sampleRate*.1);
+  while(end-s.sent>=(flush?1:size)){const next=Math.min(end,s.sent+size),pcm=pcmWindow(r,s.sent,next),buffer=new ArrayBuffer(pcm.length*2),view=new DataView(buffer);for(let i=0;i<pcm.length;i++){const v=Math.max(-1,Math.min(1,pcm[i]));view.setInt16(i*2,Math.round(v*(v<0?32768:32767)),true);}s.socket.send(buffer);s.sent=next;}
+ }
+ async function finish(r){const s=r?.reading;
+  if(s?.deviceStream){const result=await s.deviceStream.finish();if(result?.status==='ready')r.liveTranscript=result;stop(r);return;}
+  if(!s||s.local||s.provider!=='sherpa-local'||s.socket?.readyState!==1||!s.pump){stop(r);return;}
+  s.finishing=true;clearInterval(s.pump);clearTimeout(s.openTimeout);
+  // Flush the worklet first, then the ASR tail. A timeout never blocks saving the WAV.
+  await new Promise(resolve=>{const timeout=setTimeout(()=>s.finish(null),2500);
+   s.finish=result=>{clearTimeout(timeout);s.finish=null;if(result?.status==='ready'&&typeof result.transcript==='string'&&result.transcript.length<=4000&&Array.isArray(result.words))r.liveTranscript=result;stop(r);resolve();};
+   try{sendAudio(r,true);s.socket.send(JSON.stringify({type:'stop'}));}catch{s.finish(null);}
+  });
  }
  async function listen(r){const s=r.reading;if(s.stopped||state.capture!==r)return;
   if(s.device&&!DeviceSpeech.ready){if(DeviceSpeech.status==='idle')DeviceSpeech.prepare();setStatus('녹음 중 · '+DeviceSpeech.label());s.timer=setTimeout(()=>listen(r),1000);return;}
@@ -112,8 +126,8 @@ const ReadingFeedback=(()=>{
   }catch{if(!s.stopped)setStatus('녹음 중 · 글자 인식은 잠시 쉬어요');}
   finally{clearTimeout(timeout);if(s.device&&performance.now()-requested>12000&&!s.stopped){setStatus('녹음 중 · 문장은 녹음 후 확인해요');return;}if(!s.stopped)s.timer=setTimeout(()=>listen(r),s.device?600:Math.max(180,1200-(performance.now()-requested)));}
  }
- function stop(r){if(!r?.reading)return;r.reading.stopped=true;clearTimeout(r.reading.timer);r.reading.controller?.abort();closeStream(r.reading);}
+ function stop(r){if(!r?.reading)return;r.reading.deviceStream?.cancel();r.reading.stopped=true;clearTimeout(r.reading.timer);r.reading.controller?.abort();closeStream(r.reading);}
  window.addEventListener('pagehide',()=>stop(state.capture));
  for(const name of ['play','timeupdate','seeked','pause','ended'])document.addEventListener(name,e=>{if(e.target.tagName==='AUDIO')playback(e.target);},true);
- return {letters,paragraphs,markup,align,assessment,report,begin,stop,prepare,streamResult};
+ return {letters,paragraphs,markup,align,assessment,report,begin,stop,finish,prepare,streamResult};
 })();
