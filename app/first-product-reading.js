@@ -39,9 +39,9 @@ const ReadingFeedback=(()=>{
   const a=assessment(r);let at=0;const words=(r.transcript?.words||[]).map(w=>{const start=at;at+=letters(w.text).length;return {...w,positions:(a?.map||[]).filter(p=>p.heard>=start&&p.heard<at).map(p=>p.expected)};});
   timingCache.set(r,{transcript:r.transcript,words});return words;
  }
- function playback(audio){const id=audio.dataset?.audioId;if(!id)return;const root=document.querySelector(`[data-reading-id="${id}"]`),r=state.records.find(r=>r.id===id);if(!root||!r)return;const button=document.querySelector(`[data-reading-play="${id}"]`);if(button)button.textContent=audio.paused?'▷ 재생':'Ⅱ 일시정지';
+ function playback(audio){const id=audio.dataset?.audioId;if(!id)return;const roots=document.querySelectorAll(`[data-reading-id="${id}"]`),r=state.records.find(r=>r.id===id);if(!roots.length||!r)return;const button=document.querySelector(`[data-reading-play="${id}"]`);if(button)button.textContent=audio.paused?'▷ 재생':'Ⅱ 일시정지';
   const w=!audio.paused&&timing(r).find(w=>audio.currentTime>=w.start&&audio.currentTime<=w.end),positions=new Set(w?.positions||[]);
-  root.querySelectorAll('[data-pos]').forEach(el=>el.classList.toggle('word-wave',positions.has(Number(el.dataset.pos))));
+  roots.forEach(root=>root.querySelectorAll('[data-pos]').forEach(el=>el.classList.toggle('word-wave',positions.has(Number(el.dataset.pos)))));
  }
  function setStatus(message){const el=document.getElementById('reading-status');if(el)el.textContent=message;}
  function pcmWindow(r,start,end){const out=new Float32Array(end-start);let offset=0;for(const chunk of r.chunks){const lo=Math.max(start-offset,0),hi=Math.min(end-offset,chunk.length);if(hi>lo)out.set(chunk.subarray(lo,hi),offset+lo-start);offset+=chunk.length;if(offset>=end)break;}return out;}

@@ -496,5 +496,5 @@ function edgeTick(f){
  function wake(){if(!raf&&!document.hidden){last=0;raf=requestAnimationFrame(frame);}}
  if(!initGL())use2D();document.body.dataset.waterRenderer=cv.dataset.renderer;resize();refresh();document.addEventListener('pointerdown',e=>{if(!motion()||e.target.closest('input,textarea,select,dialog,audio'))return;ring(e.clientX/innerWidth,e.clientY/innerHeight,27,1.2);wake();},{passive:true});
  window.addEventListener('resize',resize,{passive:true});window.visualViewport?.addEventListener('resize',resize,{passive:true});document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelAnimationFrame(raf);raf=0;}else wake();});matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',()=>{A.fill(0);B.fill(0);wake();});
- return {begin,sound,reading,finish,playback,voice,refresh,wake,previewPulse(){if(motion())ring(.5,.65,30,.7);wake();},quiet(){V.ac=null;V.an=null;frequency=null;talking=false;inputAmount=0;wake();}};
+ return {begin,sound,reading,finish,playback,voice,refresh,wake,previewPulse(){if(motion())ring(.5,.5,65,1.2);wake();},quiet(){V.ac=null;V.an=null;frequency=null;talking=false;inputAmount=0;wake();}};
 })();
