@@ -1,0 +1,42 @@
+{
+  "packages": [
+    {
+      "name": "@tesseract.js-data/eng",
+      "version": "1.0.0",
+      "tarball": "https://registry.npmjs.org/@tesseract.js-data/eng/-/eng-1.0.0.tgz",
+      "integrity": "sha512-mbTumm6KQPUHyzTPQaF3ObXYnx0SqqfV2nabqFVQBwD6Kl7PhGSLSzOlfFTWy0P3BjghaSKA2W9GB19Jk+ZcTg=="
+    },
+    {
+      "name": "tesseract.js",
+      "version": "7.0.0",
+      "tarball": "https://registry.npmjs.org/tesseract.js/-/tesseract.js-7.0.0.tgz",
+      "integrity": "sha512-exPBkd+z+wM1BuMkx/Bjv43OeLBxhL5kKWsz/9JY+DXcXdiBjiAch0V49QR3oAJqCaL5qURE0vx9Eo+G5YE7mA=="
+    },
+    {
+      "name": "tesseract.js-core",
+      "version": "7.0.0",
+      "tarball": "https://registry.npmjs.org/tesseract.js-core/-/tesseract.js-core-7.0.0.tgz",
+      "integrity": "sha512-WnNH518NzmbSq9zgTPeoF8c+xmilS8rFIl1YKbk/ptuuc7p6cLNELNuPAzcmsYw450ca6bLa8j3t0VAtq435Vw=="
+    },
+    {
+      "name": "@tesseract.js-data/kor",
+      "version": "1.0.0",
+      "tarball": "https://registry.npmjs.org/@tesseract.js-data/kor/-/kor-1.0.0.tgz",
+      "integrity": "sha512-tepYhsYiRJ8E44R27MHxVteEDDLfYQxuvM6u4JlEHcCYqwpefvI5TGzoMgB67kunOvtyEJYtT5zfJ/6R6FVU9w=="
+    }
+  ],
+  "files": {
+    "worker.min.js.LICENSE.txt": "45f54171aeaa1d10c0c1a66f374b7bba1f02472b1487fbe892eec04f840002ac",
+    "tesseract.min.js": "000c27d9cd0def655f77b36c72a389c0ab13793aa31cb4d7aab56d09c0afbc7e",
+    "tesseract-core-relaxedsimd.wasm.js": "843074aa5bad1cc6421b74a86201768ced9f244795e4d81435435a61a40ce535",
+    "worker.min.js": "576b7df7e3393e137e51849357c9adb53fe7ac1bb69bfa06cf3d61520f182c6d",
+    "tesseract-core-relaxedsimd-lstm.wasm.js": "861a536cf9ef8e63cb644d57bab39c388f37f7d6b6f60024b741c5f6b39a59b3",
+    "tesseract-core-simd-lstm.wasm.js": "c58b46a4c796c0b8afccf77591d5b875b6896b45d402bbce8caa6f5362447b38",
+    "eng.traineddata.gz": "45b4cb346724ac1774f1c36f42f182b887bcdb28ebe63e6fff90ac41f3fcff91",
+    "tesseract-core-lstm.wasm.js": "eef5f8b2f8e20e150680b20adaec4a60babafee3adbe8a94583c81fee46e8680",
+    "tesseract-core.wasm.js": "0bc6ce3e5fbbd0cd89706cf2fd70960e3372f4f01ee24265b26990808aaeb286",
+    "kor.traineddata.gz": "78c21276ab14c9bb734d83be1055d9fe5469a4e7e977c51ad385be5737e61126",
+    "tesseract-core-simd.wasm.js": "6b61ef4e911b5cf57e656bbfe983d6e2b3711a02dd164154ddda064566e8e09d",
+    "tesseract.min.js.LICENSE.txt": "cdf963ced7d25a0f98901a547647b4d6e2dbe0197fd78c87a059a87b0e542fe2"
+  }
+}

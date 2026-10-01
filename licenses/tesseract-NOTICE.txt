@@ -1,0 +1,6 @@
+Tesseract.js 7.0.0 and tesseract.js-core 7.0.0: Apache-2.0.
+Korean and English trained data: @tesseract.js-data/{kor,eng} 1.0.0, 4.0.0_best_int, upstream Apache-2.0 license included (npm package metadata lists MIT).
+Sources: https://github.com/naptha/tesseract.js and https://github.com/naptha/tessdata
+Pinned package integrity and SHA-256 per asset: app/assets/ocr/provenance.json
+Bundled dependency notices: app/assets/ocr/*.LICENSE.txt
+All assets loaded on demand from this origin. Photos are processed on the device; only reviewed text is persisted.
